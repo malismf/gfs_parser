@@ -8,11 +8,12 @@ import os
 import shutil
 import time
 import requests
+from tqdm import tqdm
 
 NOMADS_BASE = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
 PRODUCT = "pgrb2.0p25"
 
-HOURLY_UNTIL = 120 # GFS 0.25 прогноз является почасовым до
+HOURLY_UNTIL = 120 # GFS 0.25 прогноз является почасовым до 120
 MAX_FHOUR = 384 # макс. горизонт прогноза GFS
 
 # === utilities ===
@@ -34,7 +35,7 @@ def forecast_hours(max_fhour, hourly_until):
     hours = list(range(0, hourly_until + 1))
     hours += list(range(hourly_until + 3, max_fhour + 1, 3))
     return hours
-
+    
 def get_complete_cycles(run_date, timeout=10):
     complete = []
     for cycle in (0, 6, 12, 18):
@@ -69,19 +70,35 @@ def build_to_download_list(run_date, cycles, forecast_cycle):
 
 # === downloading ===
 def download_file(url, path):
-    response = requests.get(url)
-    if response.status_code != 200:
+    try:
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException:
         return False
+
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        f.write(response.content)
+    total = int(response.headers.get("Content-Length", 0))
+
+    with open(path, "wb") as f, tqdm(
+        total=total,
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        desc=os.path.basename(path),
+        leave=False,
+    ) as bar:
+        for chunk in response.iter_content(chunk_size=1024 * 64):
+            if chunk:
+                f.write(chunk)
+                bar.update(len(chunk))
+
     return True
  
  
 
 def download(files, dest):
     summary = {"downloaded": 0, "skipped": 0, "failed": 0}
-    for file in files:
+    for file in tqdm(files, desc="Скачивание GFS", unit="файл"):
         path = local_path(file, dest)
         if os.path.exists(path):
             summary["skipped"] += 1
