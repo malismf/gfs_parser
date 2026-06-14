@@ -7,6 +7,7 @@ import urllib.request
 import os
 import shutil
 import time
+import requests
 
 NOMADS_BASE = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
 PRODUCT = "pgrb2.0p25"
@@ -29,7 +30,7 @@ def build_gfs_params(run_date, cycle, fhour):
     return f"{NOMADS_BASE}/gfs.{ymd}/{cc}/atmos/{filename}"
 
 
-def forecast_hours(max_fhour=384, hourly_until=120):
+def forecast_hours(max_fhour, hourly_until):
     hours = list(range(0, hourly_until + 1))
     hours += list(range(hourly_until + 3, max_fhour + 1, 3))
     return hours
@@ -54,42 +55,31 @@ def local_path(file, dest):
 
 
 # === pre-downloading ===
-def build_file_list(run_date, cycles, forecast_cycle=18, max_fhour=384):
+def build_to_download_list(run_date, cycles, forecast_cycle):
     files = []
     for cycle in cycles:
-        hours = forecast_hours(max_fhour) if cycle == forecast_cycle else [0]
+        hours = forecast_hours(MAX_FHOUR, HOURLY_UNTIL) if cycle == forecast_cycle else [0]
         for fhour in hours:
             files.append({
                 "cycle": cycle,
                 "fhour": fhour,
-                "url": build_gfs_params(run_date, cycle, fhour),
+                "url": build_gfs_params(run_date, cycle, fhour)
             })
     return files
 
 # === downloading ===
-def download_file(url, path, retries=3, timeout=60):
+def download_file(url, path):
+    response = requests.get(url)
+    if response.status_code != 200:
+        return False
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".part"
-    last_error = None
-    for attempt in range(1, retries + 1):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "gfs-collector/1.0"})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                with open(tmp, "wb") as f:
-                    shutil.copyfileobj(resp, f)
-            os.replace(tmp, path)
-            return True
-        except Exception as exc:
-            last_error = exc
-            if os.path.exists(tmp):
-                os.remove(tmp)
-            if attempt < retries:
-                time.sleep(2 * attempt)
-    print(f"  ошибка: {url} ({last_error})")
-    return False
+    with open(path, "wb") as f:
+        f.write(response.content)
+    return True
+ 
+ 
 
-
-def download(files, dest="gfs_data", retries=3, timeout=60):
+def download(files, dest):
     summary = {"downloaded": 0, "skipped": 0, "failed": 0}
     for file in files:
         path = local_path(file, dest)
@@ -97,15 +87,24 @@ def download(files, dest="gfs_data", retries=3, timeout=60):
             summary["skipped"] += 1
             continue
         print(f"качаю c{file['cycle']:02d} f{file['fhour']:03d}")
-        if download_file(file["url"], path, retries=retries, timeout=timeout):
+        if download_file(file["url"], path):
             summary["downloaded"] += 1
         else:
             summary["failed"] += 1
     return summary
 
 
+def main():
+    PATH = "gfs_data" 
+
+    # === pre-downloading gfs variables ===
+    run_date = datetime.now(timezone.utc) # текущий день
+    complete_cycles = get_complete_cycles(run_date) # доступные циклы на день
+    forecast_cycle = min(complete_cycles) # цикл, для которого качаем полный прогноз
+    
+    to_download_list = build_to_download_list(run_date, complete_cycles, forecast_cycle)
+    download(to_download_list, PATH)
+
+
 if __name__ == "__main__":
-    run_date = datetime.now(timezone.utc)
-    print(get_complete_cycles(run_date))
-    gfs_link = build_gfs_params(date(2026, 6, 13), 0, 384)
-    print(local_path({"url": gfs_link}, "path"))
+    main()
