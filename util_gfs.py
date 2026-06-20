@@ -78,27 +78,25 @@ def group_frame(ds):
 def extract_file(path):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
     frames = [g for g in (group_frame(ds) for ds in datasets) if g is not None]
-    df = pd.concat(frames, axis=1).reset_index()
+    df = pd.concat(frames, axis=1).reset_index().rename(columns=FORECAST_COLUMNS)
 
-    # единый набор и порядок колонок: инфо + переменные прогноза
-    # (на ранних шагах нет tmax/tmin/tp/SUNSD — добиваем NaN)
-    final_cols = INFO_COLUMNS + list(FORECAST_COLUMNS)
-    for col in final_cols:
+    # на ранних шагах нет temp_max/temp_min/precip/sun_dur — добиваем NaN
+    for col in FORECAST_COLUMNS.values():
         if col not in df.columns:
             df[col] = np.nan
-    df = df[final_cols].rename(columns=FORECAST_COLUMNS)
 
     # температуры из Кельвинов в Цельсии
     for c in ["temp", "temp_max", "temp_min"]:
         df[c] = kelvin_to_celsius(df[c])
 
-    # ветер: модуль и направление из U/V, сами компоненты убираем
+    # ветер: модуль и направление из U/V, U/V дропается
     df[["wind_speed", "wind_dir"]] = df[["wind_u", "wind_v"]].apply(
         lambda x: find_wind_speed_and_direction(*x), axis=1, result_type="expand"
     )
-    df = df.drop(columns=["wind_u", "wind_v"])
 
-    return df
+    # итоговый набор и порядок колонок 
+    final_cols = INFO_COLUMNS + FORECAST_COLUMNS.values()
+    return df[final_cols]
 
 
 def main():
