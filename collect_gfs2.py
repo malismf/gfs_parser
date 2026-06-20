@@ -19,6 +19,13 @@ MAX_FHOUR = 384 # макс. горизонт прогноза GFS
 GFS_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 BBOX = {"north": 64.52, "south": 50.5, "west": 95.5, "east": 119.55}
 
+# переменные GFS, нужные для расчёта TCI
+TCI_VARS_INSTANT = ["TMP", "RH", "UGRD", "VGRD"]   # мгновенные — есть на всех шагах
+TCI_VARS_ACCUM = ["APCP", "SUNSD"]                  # накопительные — на f000 отсутствуют
+TCI_VARS_EXTREME = ["TMAX", "TMIN"]                 # экстремумы — только при шаге > HOURLY_UNTIL
+TCI_LEVELS_BASE = ["2_m_above_ground", "10_m_above_ground"]
+TCI_LEVEL_SURFACE = "surface"
+
 # === utilities ===
 def format_run_date(run_date):
     if isinstance(run_date, (date, datetime)):
@@ -58,23 +65,44 @@ def local_path(file, dest):
     return f"{dest}/{date_dir}/{cc}/{filename}"
 
 
-# собирает ссылку на серверную подвыборку: все переменные и уровни, но только по квадрату
+def tci_vars_levels(fhour):
+    """Список переменных и уровней под TCI для конкретного шага прогноза."""
+    variables = list(TCI_VARS_INSTANT)
+    levels = list(TCI_LEVELS_BASE)
+
+    if fhour > 0:                      # на f000 накопительных полей нет
+        variables += TCI_VARS_ACCUM
+        levels.append(TCI_LEVEL_SURFACE)
+
+    if fhour > HOURLY_UNTIL:           # шаг стал 3-часовым — берём экстремумы
+        variables += TCI_VARS_EXTREME
+
+    return variables, levels
+
+
+# собирает ссылку на серверную подвыборку: только переменные под TCI и только по квадрату
 def build_filter_url(run_date, cycle, fhour, bbox):
     ymd = format_run_date(run_date)
     cc = f"{cycle:02d}"
     fff = f"{fhour:03d}"
-    query = urlencode({
+
+    variables, levels = tci_vars_levels(fhour)
+
+    params = {
         "file": f"gfs.t{cc}z.{PRODUCT}.f{fff}",
-        "all_var": "on",
-        "all_lev": "on",
         "subregion": "",
         "leftlon": bbox["west"],
         "rightlon": bbox["east"],
         "toplat": bbox["north"],
         "bottomlat": bbox["south"],
         "dir": f"/gfs.{ymd}/{cc}/atmos",
-    })
-    return f"{GFS_FILTER_URL}?{query}"
+    }
+    for v in variables:
+        params[f"var_{v}"] = "on"
+    for lev in levels:
+        params[f"lev_{lev}"] = "on"
+
+    return f"{GFS_FILTER_URL}?{urlencode(params)}"
 
 
 # === pre-downloading ===
