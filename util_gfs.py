@@ -1,6 +1,7 @@
 """
-util_gfs — извлечение прогнозов GFS (GRIB2) в плоскую таблицу.
-Берёт скачанные collect_gfs.py файлы и собирает значения по шагам прогноза.
+util_gfs — извлечение прогнозов GFS (GRIB2) и суточная агрегация.
+Берёт скачанные collect_gfs.py файлы, собирает значения по шагам прогноза
+и агрегирует их по локальным суткам — один CSV на день.
 """
 
 import glob
@@ -11,10 +12,12 @@ import warnings
 import cfgrib
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-PATH = "gfs_data" # каталог, куда collect_gfs.py складывает GRIB2-файлы
+PATH = "gfs_data"        # каталог, куда collect_gfs.py складывает GRIB2-файлы
+DAILY_PATH = "gfs_daily" # каталог под суточные CSV (1 день — 1 файл)
 
 # координаты/метаданные, общие для всех групп
 INFO_COLUMNS = ["latitude", "longitude", "time", "step", "valid_time"]
@@ -22,8 +25,8 @@ INFO_COLUMNS = ["latitude", "longitude", "time", "step", "valid_time"]
 # имя переменной в cfgrib -> имя колонки в таблице
 FORECAST_COLUMNS = {
     "t2m": "temp",       # мгновенная температура 2 м, K
-    "tmax": "temp_max",  # максимум за бакет, K (только fhour > 120)
-    "tmin": "temp_min",  # минимум за бакет, K (только fhour > 120)
+    "tmax": "temp_max",  # максимум температуры за период, K (только fhour > 120)
+    "tmin": "temp_min",  # минимум температуры за период, K (только fhour > 120)
     "r2": "rel_hum",     # отн. влажность 2 м, %
     "u10": "wind_u",     # U-компонента ветра 10 м, м/с
     "v10": "wind_v",     # V-компонента ветра 10 м, м/с
@@ -38,11 +41,15 @@ def fhour(path):
     return int(m.group(1)) if m else -1
 
 
-def find_sample_file(path=PATH):
-    files = [
+def list_files(path=PATH):
+    return sorted(
         f for f in glob.glob(os.path.join(path, "**", "*"), recursive=True)
         if os.path.isfile(f) and not f.endswith(".idx")
-    ]
+    )
+
+
+def find_sample_file(path=PATH):
+    files = list_files(path)
     if not files:
         raise FileNotFoundError(f"GRIB2-файлы не найдены в {path}")
     return max(files, key=fhour)
@@ -89,23 +96,63 @@ def extract_file(path):
     for c in ["temp", "temp_max", "temp_min"]:
         df[c] = kelvin_to_celsius(df[c])
 
-    # ветер: модуль и направление из U/V, U/V дропается
+    # ветер: модуль и направление из U/V
     df[["wind_speed", "wind_dir"]] = df[["wind_u", "wind_v"]].apply(
         lambda x: find_wind_speed_and_direction(*x), axis=1, result_type="expand"
     )
 
-    # итоговый набор и порядок колонок 
-    final_cols = INFO_COLUMNS + FORECAST_COLUMNS.values()
+    # итоговый набор и порядок колонок (ветер уже как speed/dir, сырые U/V не берём)
+    final_cols = INFO_COLUMNS + [
+        "temp", "temp_max", "temp_min", "rel_hum",
+        "wind_speed", "wind_dir", "precip", "sun_dur",
+    ]
     return df[final_cols]
 
 
+# все файлы каталога -> одна таблица по шагам прогноза
+def extract_all(path=PATH):
+    frames = [extract_file(f) for f in tqdm(list_files(path), desc="Извлечение GFS", unit="файл")]
+    return pd.concat(frames, ignore_index=True)
+
+
+# === агрегация периодов ===
+# суточная агрегация: одна строка на точку сетки за локальный день
+def aggregate_daily(df):
+    df = df.copy()
+    # локальная дата (UTC+8, Иркутск) — по ней режем на сутки
+    df["date_local"] = (pd.to_datetime(df["valid_time"]) + pd.Timedelta(hours=8)).dt.date
+
+    # суточные экстремумы: мгновенная temp вместе с TMAX/TMIN за период
+    df["t_hi"] = df[["temp", "temp_max"]].max(axis=1)
+    df["t_lo"] = df[["temp", "temp_min"]].min(axis=1)
+
+    daily = df.groupby(["date_local", "latitude", "longitude"]).agg(
+        temp_mean=("temp", "mean"),
+        temp_max=("t_hi", "max"),
+        temp_min=("t_lo", "min"),
+        rel_hum_mean=("rel_hum", "mean"),
+        rel_hum_min=("rel_hum", "min"),
+        wind_speed_mean=("wind_speed", "mean"),
+    ).reset_index()
+
+    # precip и sun_dur пока не агрегируем: осадки накопленные (нужна де-аккумуляция),
+    # sun_dur — надо определить семантику SUNSD. Добавим следующим шагом.
+    return daily
+
+
+# по одному CSV на каждый локальный день
+def write_daily(daily, dest=DAILY_PATH):
+    os.makedirs(dest, exist_ok=True)
+    for day, group in daily.groupby("date_local"):
+        group.to_csv(os.path.join(dest, f"{day}.csv"), index=False)
+    return daily["date_local"].nunique()
+
+
 def main():
-    sample = find_sample_file()
-    df = extract_file(sample)
-    print(sample)
-    print("колонки:", list(df.columns))
-    print("строк:", len(df))
-    print(df.head())
+    df = extract_all()
+    daily = aggregate_daily(df)
+    n = write_daily(daily)
+    print(f"Готово: {n} дней записано в {DAILY_PATH}/")
 
 
 if __name__ == "__main__":
