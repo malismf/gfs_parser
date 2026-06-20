@@ -6,6 +6,7 @@ util_gfs — извлечение прогнозов GFS (GRIB2) в плоску
 import glob
 import os
 import re
+import math
 import warnings
 import cfgrib
 import numpy as np
@@ -15,8 +16,11 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 PATH = "gfs_data" # каталог, куда collect_gfs.py складывает GRIB2-файлы
 
+# координаты/метаданные, общие для всех групп
+INFO_COLUMNS = ["latitude", "longitude", "time", "step", "valid_time"]
+
 # имя переменной в cfgrib -> имя колонки в таблице
-VAR_COLUMNS = {
+FORECAST_COLUMNS = {
     "t2m": "temp",       # мгновенная температура 2 м, K
     "tmax": "temp_max",  # максимум за бакет, K (только fhour > 120)
     "tmin": "temp_min",  # минимум за бакет, K (только fhour > 120)
@@ -26,8 +30,6 @@ VAR_COLUMNS = {
     "tp": "precip",      # накопленные осадки, kg/m^2 (= мм)
     "SUNSD": "sun_dur",  # продолжительность солнечного сияния, с
 }
-
-COORDS = ["latitude", "longitude", "time", "step", "valid_time"]
 
 
 # === поиск файлов ===
@@ -46,30 +48,54 @@ def find_sample_file(path=PATH):
     return max(files, key=fhour)
 
 
+# === расчёты ===
+# скорость и направление ветра из компонент U/V
+def find_wind_speed_and_direction(u, v):
+    if u == 0 and v == 0:
+        return 0, 0
+    wind_speed = math.sqrt(u ** 2 + v ** 2)
+    wind_direction = (math.atan2(u / wind_speed, v / wind_speed)) * (180 / math.pi) + 180
+    return wind_speed, wind_direction
+
+
+# температура из Кельвинов в Цельсии
+def kelvin_to_celsius(t):
+    return t - 273.15
+
+
 # === извлечение ===
 # из датасета берём только нужные переменные + общие координаты
 def group_frame(ds):
-    found = [v for v in VAR_COLUMNS if v in ds.data_vars]
-    if not found:
+    info = [c for c in INFO_COLUMNS if c in ds.coords]
+    forecast = [v for v in FORECAST_COLUMNS if v in ds.data_vars]
+    if not forecast:
         return None
-    df = ds[found].to_dataframe().reset_index()
-    idx = [c for c in COORDS if c in df.columns]
-    return df[idx + found].set_index(idx)
+    df = ds[forecast].to_dataframe().reset_index()
+    return df[info + forecast].set_index(info)
 
 
 # один GRIB2-файл -> плоская таблица: строка на точку сетки за один шаг прогноза
 def extract_file(path):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
     frames = [g for g in (group_frame(ds) for ds in datasets) if g is not None]
-    df = pd.concat(frames, axis=1).reset_index().rename(columns=VAR_COLUMNS)
+    df = pd.concat(frames, axis=1).reset_index().rename(columns=FORECAST_COLUMNS)
 
     # единый набор колонок (на ранних шагах нет temp_max/temp_min/precip/sun_dur)
-    for col in VAR_COLUMNS.values():
+    for col in FORECAST_COLUMNS.values():
         if col not in df.columns:
             df[col] = np.nan
 
-    order = COORDS + list(VAR_COLUMNS.values())
-    return df[[c for c in order if c in df.columns]]
+    # температуры из Кельвинов в Цельсии
+    for c in ["temp", "temp_max", "temp_min"]:
+        df[c] = kelvin_to_celsius(df[c])
+
+    # ветер: модуль и направление из U/V, сами компоненты убираем
+    df[["wind_speed", "wind_dir"]] = df[["wind_u", "wind_v"]].apply(
+        lambda x: find_wind_speed_and_direction(*x), axis=1, result_type="expand"
+    )
+    df = df.drop(columns=["wind_u", "wind_v"])
+
+    return df
 
 
 def main():
