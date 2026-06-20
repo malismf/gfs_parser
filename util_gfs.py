@@ -16,15 +16,15 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 PATH = "gfs_data" # каталог, куда collect_gfs.py складывает GRIB2-файлы
 
 # имя переменной в cfgrib -> имя колонки в таблице
-RENAME = {
-    "t2m": "T",       # мгновенная температура 2 м, K
-    "tmax": "TMAX",   # максимум за бакет, K (только fhour > 120)
-    "tmin": "TMIN",   # минимум за бакет, K (только fhour > 120)
-    "r2": "RH",       # отн. влажность 2 м, %
-    "u10": "U",       # U-компонента ветра 10 м, м/с
-    "v10": "V",       # V-компонента ветра 10 м, м/с
-    "tp": "APCP",     # накопленные осадки, kg/m^2 (= мм)
-    "SUNSD": "SUNSD", # продолжительность солнечного сияния, с
+VAR_COLUMNS = {
+    "t2m": "temp",       # мгновенная температура 2 м, K
+    "tmax": "temp_max",  # максимум за бакет, K (только fhour > 120)
+    "tmin": "temp_min",  # минимум за бакет, K (только fhour > 120)
+    "r2": "rel_hum",     # отн. влажность 2 м, %
+    "u10": "wind_u",     # U-компонента ветра 10 м, м/с
+    "v10": "wind_v",     # V-компонента ветра 10 м, м/с
+    "tp": "precip",      # накопленные осадки, kg/m^2 (= мм)
+    "SUNSD": "sun_dur",  # продолжительность солнечного сияния, с
 }
 
 COORDS = ["latitude", "longitude", "time", "step", "valid_time"]
@@ -49,26 +49,26 @@ def find_sample_file(path=PATH):
 # === извлечение ===
 # из датасета берём только нужные переменные + общие координаты
 def group_frame(ds):
-    wanted = [v for v in RENAME if v in ds.data_vars]
-    if not wanted:
+    found = [v for v in VAR_COLUMNS if v in ds.data_vars]
+    if not found:
         return None
-    df = ds[wanted].to_dataframe().reset_index()
+    df = ds[found].to_dataframe().reset_index()
     idx = [c for c in COORDS if c in df.columns]
-    return df[idx + wanted].set_index(idx)
+    return df[idx + found].set_index(idx)
 
 
 # один GRIB2-файл -> плоская таблица: строка на точку сетки за один шаг прогноза
 def extract_file(path):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
     frames = [g for g in (group_frame(ds) for ds in datasets) if g is not None]
-    df = pd.concat(frames, axis=1).reset_index().rename(columns=RENAME)
+    df = pd.concat(frames, axis=1).reset_index().rename(columns=VAR_COLUMNS)
 
-    # единый набор колонок (на ранних шагах нет TMAX/TMIN/APCP/SUNSD)
-    for col in RENAME.values():
+    # единый набор колонок (на ранних шагах нет temp_max/temp_min/precip/sun_dur)
+    for col in VAR_COLUMNS.values():
         if col not in df.columns:
             df[col] = np.nan
 
-    order = COORDS + list(RENAME.values())
+    order = COORDS + list(VAR_COLUMNS.values())
     return df[[c for c in order if c in df.columns]]
 
 
