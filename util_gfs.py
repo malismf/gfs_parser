@@ -78,12 +78,15 @@ def group_frame(ds):
 def extract_file(path):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
     frames = [g for g in (group_frame(ds) for ds in datasets) if g is not None]
-    df = pd.concat(frames, axis=1).reset_index().rename(columns=FORECAST_COLUMNS)
+    df = pd.concat(frames, axis=1).reset_index()
 
-    # единый набор колонок (на ранних шагах нет temp_max/temp_min/precip/sun_dur)
-    for col in FORECAST_COLUMNS.values():
+    # единый набор и порядок колонок: инфо + переменные прогноза
+    # (на ранних шагах нет tmax/tmin/tp/SUNSD — добиваем NaN)
+    final_cols = INFO_COLUMNS + list(FORECAST_COLUMNS)
+    for col in final_cols:
         if col not in df.columns:
             df[col] = np.nan
+    df = df[final_cols].rename(columns=FORECAST_COLUMNS)
 
     # температуры из Кельвинов в Цельсии
     for c in ["temp", "temp_max", "temp_min"]:
