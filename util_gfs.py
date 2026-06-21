@@ -70,6 +70,13 @@ def kelvin_to_celsius(t):
     return t - 273.15
 
 
+# приращение накопленной величины за шаг: tp и SUNSD копятся до 6 часов и потом сбрасываются, поэтому берём разность, а на сбросе — само значение
+def deaccumulate(df, col):
+    s = df.sort_values(["latitude", "longitude", "time", "step"])
+    diff = s.groupby(["latitude", "longitude", "time"])[col].diff()
+    return diff.where(diff >= 0, s[col])
+
+
 # === извлечение ===
 # из датасета берём только нужные переменные + общие координаты
 def group_frame(ds):
@@ -86,6 +93,10 @@ def extract_file(path):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
     frames = [g for g in (group_frame(ds) for ds in datasets) if g is not None]
     df = pd.concat(frames, axis=1).reset_index().rename(columns=FORECAST_COLUMNS)
+
+    # у tp две записи (сумма от старта прогона и накопление за 6 часов) — cfgrib может дать дубль колонки precip, оставляем не-повторные
+    is_duplicate = df.columns.duplicated()
+    df = df.loc[:, ~is_duplicate]
 
     # на ранних шагах нет temp_max/temp_min/precip/sun_dur — добиваем NaN
     for col in FORECAST_COLUMNS.values():
@@ -126,6 +137,10 @@ def aggregate_daily(df):
     df["t_hi"] = df[["temp", "temp_max"]].max(axis=1)
     df["t_lo"] = df[["temp", "temp_min"]].min(axis=1)
 
+    # осадки и сияние накоплены -> деаккумулируем приращение за шаг (сияние сразу в часы)
+    df["precip_step"] = deaccumulate(df, "precip")
+    df["sun_hours_step"] = deaccumulate(df, "sun_dur") / 3600
+
     daily = df.groupby(["date_local", "latitude", "longitude"]).agg(
         temp_mean=("temp", "mean"),
         temp_max=("t_hi", "max"),
@@ -133,10 +148,10 @@ def aggregate_daily(df):
         rel_hum_mean=("rel_hum", "mean"),
         rel_hum_min=("rel_hum", "min"),
         wind_speed_mean=("wind_speed", "mean"),
+        precip_sum=("precip_step", "sum"),
+        sun_hours=("sun_hours_step", "sum"),
     ).reset_index()
 
-    # precip и sun_dur пока не агрегируем: осадки накопленные (нужна де-аккумуляция),
-    # sun_dur — надо определить семантику SUNSD. Добавим следующим шагом.
     return daily
 
 
