@@ -19,13 +19,6 @@ MAX_FHOUR = 384 # макс. горизонт прогноза GFS
 GFS_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 BBOX = {"north": 64.52, "south": 50.5, "west": 95.5, "east": 119.55}
 
-# переменные GFS, нужные для расчёта TCI
-TCI_VARS_INSTANT = ["TMP", "RH", "UGRD", "VGRD"]   # мгновенные — есть на всех шагах
-TCI_VARS_ACCUM = ["APCP", "SUNSD"]                  # накопительные — на f000 отсутствуют
-TCI_VARS_EXTREME = ["TMAX", "TMIN"]                 # экстремумы — только при шаге > HOURLY_UNTIL
-TCI_LEVELS_BASE = ["2_m_above_ground", "10_m_above_ground"]
-TCI_LEVEL_SURFACE = "surface"
-
 # === utilities ===
 def format_run_date(run_date):
     if isinstance(run_date, (date, datetime)):
@@ -67,15 +60,15 @@ def local_path(file, dest):
 
 def tci_vars_levels(fhour):
     """Список переменных и уровней под TCI для конкретного шага прогноза."""
-    variables = list(TCI_VARS_INSTANT)
-    levels = list(TCI_LEVELS_BASE)
-
-    if fhour > 0:                      # на f000 накопительных полей нет
-        variables += TCI_VARS_ACCUM
-        levels.append(TCI_LEVEL_SURFACE)
-
-    if fhour > HOURLY_UNTIL:           # шаг стал 3-часовым — берём экстремумы
-        variables += TCI_VARS_EXTREME
+    if fhour == 0:  # на f000 накопительных полей нет
+        variables = ["TMP", "RH", "UGRD", "VGRD"]
+        levels = ["2_m_above_ground", "10_m_above_ground"]
+    elif fhour <= HOURLY_UNTIL:
+        variables = ["TMP", "RH", "UGRD", "VGRD", "APCP", "SUNSD"]
+        levels = ["2_m_above_ground", "10_m_above_ground", "surface"]
+    else:  # fhour > HOURLY_UNTIL, шаг стал 3-часовым — берём экстремумы за 3 часа
+        variables = ["TMP", "RH", "UGRD", "VGRD", "APCP", "SUNSD", "TMAX", "TMIN"]
+        levels = ["2_m_above_ground", "10_m_above_ground", "surface"]
 
     return variables, levels
 
