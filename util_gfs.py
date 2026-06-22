@@ -34,13 +34,13 @@ FORECAST_COLUMNS = {
     "SUNSD": "sun_dur",  # продолжительность солнечного сияния, с
 }
 
-
-# === поиск файлов ===
+# === utilities ===
 def fhour(path):
     m = re.search(r"\.f(\d{3})$", path)
     return int(m.group(1)) if m else -1
 
 
+# === поиск файлов ===
 def list_files(path=PATH):
     return sorted(
         f for f in glob.glob(os.path.join(path, "**", "*"), recursive=True)
@@ -55,7 +55,7 @@ def find_sample_file(path=PATH):
     return max(files, key=fhour)
 
 
-# === расчёты ===
+# === calculation ===
 # скорость и направление ветра из компонент U/V
 def find_wind_speed_and_direction(u, v):
     if u == 0 and v == 0:
@@ -77,7 +77,7 @@ def deaccumulate(df, col):
     return diff.where(diff >= 0, s[col])
 
 
-# === извлечение ===
+# === extraction ===
 # из датасета берём только нужные переменные + общие координаты
 def group_frame(ds):
     info = [c for c in INFO_COLUMNS if c in ds.coords]
@@ -126,7 +126,7 @@ def extract_all(path=PATH):
     return pd.concat(frames, ignore_index=True)
 
 
-# === агрегация периодов ===
+# === aggregation ===
 # суточная агрегация: одна строка на точку сетки за локальный день
 def aggregate_daily(df):
     df = df.copy()
