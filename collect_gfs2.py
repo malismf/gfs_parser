@@ -15,6 +15,7 @@ PRODUCT = "pgrb2.0p25"
 HOURLY_UNTIL = 120 # GFS 0.25 прогноз является почасовым до 120
 MAX_FHOUR = 384 # макс. горизонт прогноза GFS
 
+
 # сервис серверной подвыборки NOMADS и квадрат сбора (Иркутская область)
 GFS_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 BBOX = {"north": 64.52, "south": 50.5, "west": 95.5, "east": 119.55}
@@ -60,15 +61,15 @@ def local_path(file, dest):
 
 def tci_vars_levels(fhour):
     """Список переменных и уровней под TCI для конкретного шага прогноза."""
-    if fhour == 0:  # на f000 накопительных полей нет
-        variables = ["TMP", "RH", "UGRD", "VGRD"]
-        levels = ["2_m_above_ground", "10_m_above_ground"]
-    elif fhour <= HOURLY_UNTIL:
-        variables = ["TMP", "RH", "UGRD", "VGRD", "APCP", "SUNSD"]
-        levels = ["2_m_above_ground", "10_m_above_ground", "surface"]
-    else:  # fhour > HOURLY_UNTIL, шаг стал 3-часовым — берём экстремумы за 3 часа
-        variables = ["TMP", "RH", "UGRD", "VGRD", "APCP", "SUNSD", "TMAX", "TMIN"]
-        levels = ["2_m_above_ground", "10_m_above_ground", "surface"]
+    variables = ["TMP", "RH", "UGRD", "VGRD"] # мгновенные — есть на всех шагах
+    levels = ["2_m_above_ground", "10_m_above_ground"]
+
+    if fhour > 0:                      # на f000 накопительных полей нет
+        variables += ["APCP", "SUNSD"]
+        levels += ["surface"]
+
+    if fhour > HOURLY_UNTIL:           # шаг стал 3-часовым — берём экстремумы за 3 часа
+        variables += ["TMAX", "TMIN"]
 
     return variables, levels
 
