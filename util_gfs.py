@@ -17,7 +17,6 @@ from tqdm import tqdm
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 PATH = "gfs_data"        # каталог, куда collect_gfs.py складывает GRIB2-файлы
-DAILY_PATH = "gfs_daily" # каталог под суточные CSV (1 день — 1 файл)
 
 # координаты/метаданные, общие для всех групп
 INFO_COLUMNS = ["latitude", "longitude", "time", "step", "valid_time"]
@@ -79,7 +78,7 @@ def deaccumulate(df, col):
 
 # === extraction ===
 # из датасета берём только нужные переменные + общие координаты
-def group_frame(ds):
+def extract_grib_variables(ds):
     info = [c for c in INFO_COLUMNS if c in ds.coords]
     forecast = [v for v in FORECAST_COLUMNS if v in ds.data_vars]
     if not forecast:
@@ -91,8 +90,8 @@ def group_frame(ds):
 # один GRIB2-файл -> плоская таблица: строка на точку сетки за один шаг прогноза
 def extract_file(path):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
-    frames = [g for g in (group_frame(ds) for ds in datasets) if g is not None]
-    df = pd.concat(frames, axis=1).reset_index().rename(columns=FORECAST_COLUMNS)
+    grib_tables = [grib_table for grib_table in (extract_grib_variables(ds) for ds in datasets) if grib_table is not None]
+    df = pd.concat(grib_tables, axis=1).reset_index().rename(columns=FORECAST_COLUMNS)
 
     # у tp две записи (сумма от старта прогона и накопление за 6 часов) — cfgrib может дать дубль колонки precip, оставляем не-повторные
     is_duplicate = df.columns.duplicated()
@@ -122,8 +121,8 @@ def extract_file(path):
 
 # все файлы каталога -> одна таблица по шагам прогноза
 def extract_all(path=PATH):
-    frames = [extract_file(f) for f in tqdm(list_files(path), desc="Извлечение GFS", unit="файл")]
-    return pd.concat(frames, ignore_index=True)
+    file_dfs = [extract_file(f) for f in tqdm(list_files(path), desc="Извлечение GFS", unit="файл")]
+    return pd.concat(file_dfs, ignore_index=True)
 
 
 # === aggregation ===
@@ -155,20 +154,10 @@ def aggregate_daily(df):
     return daily
 
 
-# по одному CSV на каждый локальный день
-def write_daily(daily, dest=DAILY_PATH):
-    os.makedirs(dest, exist_ok=True)
-    for day, group in daily.groupby("date_local"):
-        group.to_csv(os.path.join(dest, f"{day}.csv"), index=False)
-    return daily["date_local"].nunique()
-
 
 def main():
     df = extract_all()
     daily = aggregate_daily(df)
-    n = write_daily(daily)
-    print(f"Готово: {n} дней записано в {DAILY_PATH}/")
-
 
 if __name__ == "__main__":
     main()
