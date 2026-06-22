@@ -122,40 +122,35 @@ def download_file(url, path):
         return False
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    total = int(response.headers.get("Content-Length", 0))
 
-    with open(path, "wb") as f, tqdm(
-        total=total,
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-        desc=os.path.basename(path),
-        leave=False,
-    ) as bar:
-        for chunk in response.iter_content(chunk_size=1024 * 64):
+    with open(path, "wb") as f:
+        for chunk in response.iter_content():
             if chunk:
                 f.write(chunk)
-                bar.update(len(chunk))
-
     return True
 
 
 def download(files, dest, mode="default"):
     summary = {"downloaded": 0, "skipped": 0, "failed": 0}
-    for file in tqdm(files, desc="Скачивание GFS", unit="файл"):
+    pbar = tqdm(total=len(files), unit="файл")
+    
+    for file in files:
         if mode == "grib":
             url = file["download_url"]   # серверная подвыборка по квадрату (фильтр)
         if mode == "default":
             url = file["url"]            # обычное скачивание — файл целиком
-        print(url)
         path = local_path(file, dest)
         if os.path.exists(path):
             summary["skipped"] += 1
-            continue
-        if download_file(url, path):
+        elif download_file(url, path):
             summary["downloaded"] += 1
         else:
             summary["failed"] += 1
+        
+        pbar.update(1)
+        pbar.set_description(f"Загружено: {summary['downloaded']}, Пропущено: {summary['skipped']}, Ошибки: {summary['failed']}")
+    
+    pbar.close()
     return summary
 
 
