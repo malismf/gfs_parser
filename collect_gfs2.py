@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 import os
 import requests
 from tqdm import tqdm
+import psycopg
 
 NOMADS_BASE = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
 PRODUCT = "pgrb2.0p25"
@@ -15,10 +16,35 @@ PRODUCT = "pgrb2.0p25"
 HOURLY_UNTIL = 120 # GFS 0.25 прогноз является почасовым до 120
 MAX_FHOUR = 384 # макс. горизонт прогноза GFS
 
+TODAY = date.today()
 
 # сервис серверной подвыборки NOMADS и квадрат сбора (Иркутская область)
 GFS_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 BBOX = {"north": 64.52, "south": 50.5, "west": 95.5, "east": 119.55}
+
+# === database ===
+def get_connection():
+    return psycopg.connect(
+        host="localhost",
+        port=5432,
+        dbname="tourist-climate-assessment",
+        user="postgres",
+        password="123123"
+    )
+
+
+def insert_to_forecast_run(product, run_date, cycle, collected_at):
+    """Вставляет или обновляет запись о прогноне. Возвращает id."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO forecast_run (product, run_date, cycle, collected_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (run_date, cycle) 
+                DO UPDATE SET product = EXCLUDED.product, collected_at = EXCLUDED.collected_at
+                RETURNING id
+            """, (product, run_date, cycle, collected_at))
+            return cur.fetchone()[0]
 
 # === utilities ===
 def format_run_date(run_date):
@@ -27,31 +53,10 @@ def format_run_date(run_date):
     return str(run_date)
 
 
-def build_gfs_params(run_date, cycle, fhour):
-    ymd = format_run_date(run_date)
-    cc = f"{cycle:02d}"
-    fff = f"{fhour:03d}"
-    filename = f"gfs.t{cc}z.{PRODUCT}.f{fff}"
-    return f"{NOMADS_BASE}/gfs.{ymd}/{cc}/atmos/{filename}"
-
-
 def forecast_hours(max_fhour, hourly_until):
     hours = list(range(0, hourly_until + 1))
     hours += list(range(hourly_until + 3, max_fhour + 1, 3))
     return hours
-
-def get_complete_cycles(run_date, timeout=10):
-    complete = []
-    for cycle in (0, 6, 12, 18):
-        url = build_gfs_params(run_date, cycle, fhour = 384)
-        try:
-            req = urllib.request.Request(url, method="HEAD")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                if resp.status == 200:
-                    complete.append(cycle)
-        except Exception:
-            pass
-    return complete
 
 def local_path(file, dest):
     parts = file["url"].split("/")
@@ -73,6 +78,12 @@ def tci_vars_levels(fhour):
 
     return variables, levels
 
+def build_gfs_url(run_date, cycle, fhour):
+    ymd = format_run_date(run_date)
+    cc = f"{cycle:02d}"
+    fff = f"{fhour:03d}"
+    filename = f"gfs.t{cc}z.{PRODUCT}.f{fff}"
+    return f"{NOMADS_BASE}/gfs.{ymd}/{cc}/atmos/{filename}"
 
 # собирает ссылку на серверную подвыборку: только переменные под TCI и только по квадрату
 def build_filter_url(run_date, cycle, fhour, bbox):
@@ -99,6 +110,20 @@ def build_filter_url(run_date, cycle, fhour, bbox):
     return f"{GFS_FILTER_URL}?{urlencode(params)}"
 
 
+def get_complete_cycles(run_date, timeout=10):
+    complete = []
+    for cycle in (0, 6, 12, 18):
+        url = build_gfs_url(run_date, cycle, fhour = 384)
+        try:
+            req = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    complete.append(cycle)
+        except Exception:
+            pass
+    return complete
+
+
 # === pre-downloading ===
 def build_to_download_list(run_date, cycles, forecast_cycle, bbox):
     files = []
@@ -108,7 +133,9 @@ def build_to_download_list(run_date, cycles, forecast_cycle, bbox):
             files.append({
                 "cycle": cycle,
                 "fhour": fhour,
-                "url": build_gfs_params(run_date, cycle, fhour),
+                "run_date": run_date,
+                "product": f"gfs.{format_run_date(run_date)}",
+                "url": build_gfs_url(run_date, cycle, fhour),
                 "download_url": build_filter_url(run_date, cycle, fhour, bbox)
             })
     return files
