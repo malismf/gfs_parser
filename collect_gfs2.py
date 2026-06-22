@@ -110,21 +110,24 @@ def build_filter_url(run_date, cycle, fhour, bbox):
     return f"{GFS_FILTER_URL}?{urlencode(params)}"
 
 
-def get_complete_cycles(run_date, timeout=10):
-    complete = []
+# === pre-downloading ===
+# анализ доступных прогонов дня: цикл готов, если на сервере есть f384 — сразу пишем его в forecast_run
+def get_available_runs(run_date, timeout=10):
+    product = f"gfs.{format_run_date(run_date)}"
+    collected_at = datetime.now(timezone.utc)
+    run_ids = {}
     for cycle in (0, 6, 12, 18):
-        url = build_gfs_url(run_date, cycle, fhour = 384)
+        url = build_gfs_url(run_date, cycle, fhour=384)
         try:
             req = urllib.request.Request(url, method="HEAD")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 if resp.status == 200:
-                    complete.append(cycle)
+                    run_ids[cycle] = insert_to_forecast_run(product, format_run_date(run_date), cycle, collected_at)
         except Exception:
             pass
-    return complete
+    return run_ids
 
 
-# === pre-downloading ===
 def build_to_download_list(run_date, cycles, forecast_cycle, bbox):
     files = []
     for cycle in cycles:
@@ -186,10 +189,12 @@ def main():
 
     # === pre-downloading gfs variables ===
     run_date = datetime.now(timezone.utc) # текущий день
-    complete_cycles = get_complete_cycles(run_date) # доступные циклы на день
-    forecast_cycle = min(complete_cycles) # цикл, для которого качаем полный прогноз
+    run_ids = get_available_runs(run_date) # доступные прогоны + запись в forecast_run
+    if not run_ids:                        # полных прогонов на день ещё нет
+        return
+    forecast_cycle = min(run_ids) # цикл, для которого качаем полный прогноз
 
-    to_download_list = build_to_download_list(run_date, complete_cycles, forecast_cycle, BBOX)
+    to_download_list = build_to_download_list(run_date, list(run_ids), forecast_cycle, BBOX)
     download(to_download_list, PATH, mode="grib")
 
 
