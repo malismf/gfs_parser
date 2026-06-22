@@ -7,6 +7,8 @@ import urllib.request
 from urllib.parse import urlencode
 import os
 import requests
+import cfgrib
+import pandas as pd
 from tqdm import tqdm
 import psycopg
 
@@ -45,6 +47,29 @@ def insert_to_forecast_run(product, run_date, cycle, collected_at):
                 RETURNING id
             """, (product, run_date, cycle, collected_at))
             return cur.fetchone()[0]
+
+
+# метаданные файла в БД: init_time/valid_time/step из GRIB, run_id/filename/subregion из file
+def insert_to_gfs_file(file, path):
+    ds = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})[0]
+    init_time = pd.Timestamp(ds["time"].values).to_pydatetime()
+    valid_time = pd.Timestamp(ds["valid_time"].values).to_pydatetime()
+    step = pd.Timedelta(ds["step"].values).to_pytimedelta()
+    bbox = file["subregion"]
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO gfs_file (run_id, fhour, filename, init_time, valid_time, step, subregion)
+                VALUES (%s, %s, %s, %s, %s, %s, ST_MakeEnvelope(%s, %s, %s, %s, 4326))
+                ON CONFLICT (run_id, fhour) DO NOTHING
+                RETURNING id
+            """, (
+                file["run_id"], file["fhour"], file["filename"],
+                init_time, valid_time, step,
+                bbox["west"], bbox["south"], bbox["east"], bbox["north"]
+            ))
+            row = cur.fetchone()
+            return row[0] if row else None
 
 # === utilities ===
 def format_run_date(run_date):
@@ -128,18 +153,22 @@ def get_available_runs(run_date, timeout=10):
     return run_ids
 
 
-def build_to_download_list(run_date, cycles, forecast_cycle, bbox):
+def build_to_download_list(run_date, run_ids, forecast_cycle, bbox):
     files = []
-    for cycle in cycles:
+    for cycle, run_id in run_ids.items():
         hours = forecast_hours(MAX_FHOUR, HOURLY_UNTIL) if cycle == forecast_cycle else [0]
         for fhour in hours:
+            url = build_gfs_url(run_date, cycle, fhour)
             files.append({
                 "cycle": cycle,
                 "fhour": fhour,
                 "run_date": run_date,
                 "product": f"gfs.{format_run_date(run_date)}",
-                "url": build_gfs_url(run_date, cycle, fhour),
-                "download_url": build_filter_url(run_date, cycle, fhour, bbox)
+                "url": url,
+                "download_url": build_filter_url(run_date, cycle, fhour, bbox),
+                "run_id": run_id,                # FK forecast_run
+                "filename": url.split("/")[-1],  # gfs.t00z.pgrb2.0p25.f096
+                "subregion": bbox,               # bbox области под gfs_file
             })
     return files
 
@@ -174,6 +203,7 @@ def download(files, dest, mode="default"):
             summary["skipped"] += 1
         elif download_file(url, path):
             summary["downloaded"] += 1
+            insert_to_gfs_file(file, path)   # метаданные в БД только на реально скачанный файл
         else:
             summary["failed"] += 1
         
@@ -194,7 +224,7 @@ def main():
         return
     forecast_cycle = min(run_ids) # цикл, для которого качаем полный прогноз
 
-    to_download_list = build_to_download_list(run_date, list(run_ids), forecast_cycle, BBOX)
+    to_download_list = build_to_download_list(run_date, run_ids, forecast_cycle, BBOX)
     download(to_download_list, PATH, mode="grib")
 
 
