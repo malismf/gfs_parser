@@ -78,3 +78,11 @@ def upsert_grid_points(points):
             """, [(lat, lon, lon, lat) for lat, lon in rows])
             cur.execute("SELECT latitude, longitude, id FROM grid_point")
             return {(lat, lon): pid for lat, lon, pid in cur.fetchall()}
+        
+
+def cleanup_old_runs(cutoff_date):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Выполняем удаление. Каскадное удаление (ON DELETE CASCADE) сработает автоматически
+            cur.execute("DELETE FROM forecast_run WHERE run_date < %s", (cutoff_date,))
+            print(f"Очистка завершена. Удалено прогонов старше {cutoff_date}: {cur.rowcount}")

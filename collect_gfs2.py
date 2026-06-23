@@ -12,7 +12,7 @@ import pandas as pd
 from tqdm import tqdm
 from util_gfs import extract_file, GFS_VARS, GRID
 import warnings
-from database_connection import insert_to_forecast_run, insert_to_gfs_file, upsert_grid_points, insert_gfs_vars
+from database_connection import insert_to_forecast_run, insert_to_gfs_file, upsert_grid_points, insert_gfs_vars, cleanup_old_runs
 
 # Подавляем предупреждение от cfgrib о будущих изменениях xarray
 warnings.filterwarnings('ignore', category=FutureWarning, module='cfgrib')
@@ -147,7 +147,6 @@ def download_file(url, path):
                 f.write(chunk)
     return True
 
-
 def extract_file(path, file):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
     ds1 = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})[0]
@@ -200,9 +199,11 @@ def download(files, dest, mode="default"):
 
 def main():
     PATH = "gfs_data"
+    run_date = datetime.now(timezone.utc) # текущий день
+
+    cleanup_old_runs(run_date) 
 
     # === pre-downloading gfs variables ===
-    run_date = datetime.now(timezone.utc) - timedelta(days=1) # текущий день
     run_ids = get_available_runs(run_date) # доступные прогоны + запись в forecast_run
     if not run_ids:                        # полных прогонов на день ещё нет
         return
