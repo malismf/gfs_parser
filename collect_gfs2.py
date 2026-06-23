@@ -2,7 +2,7 @@
 GFS collector — сборщик GRIB2-файлов GFS 0.25° (pgrb2) с NOMADS.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import urllib.request
 from urllib.parse import urlencode
 import os
@@ -10,8 +10,9 @@ import requests
 import cfgrib
 import pandas as pd
 from tqdm import tqdm
-import psycopg
+from util_gfs import extract_file, GFS_VARS, GRID
 import warnings
+from database_connection import insert_to_forecast_run, insert_to_gfs_file, upsert_grid_points, insert_gfs_vars
 
 # Подавляем предупреждение от cfgrib о будущих изменениях xarray
 warnings.filterwarnings('ignore', category=FutureWarning, module='cfgrib')
@@ -28,52 +29,6 @@ TODAY = date.today()
 GFS_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
 BBOX = {"north": 64.52, "south": 50.5, "west": 95.5, "east": 119.55}
 
-# === database ===
-def get_connection():
-    return psycopg.connect(
-        host="localhost",
-        port=5432,
-        dbname="tourist-climate-assessment",
-        user="postgres",
-        password="123123"
-    )
-
-
-def insert_to_forecast_run(product, run_date, cycle, collected_at):
-    """Вставляет или обновляет запись о прогноне. Возвращает id."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO forecast_run (product, run_date, cycle, collected_at)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (run_date, cycle) 
-                DO UPDATE SET product = EXCLUDED.product, collected_at = EXCLUDED.collected_at
-                RETURNING id
-            """, (product, run_date, cycle, collected_at))
-            return cur.fetchone()[0]
-
-
-# метаданные файла в БД: init_time/valid_time/step из GRIB, run_id/filename/subregion из file
-def insert_to_gfs_file(file, path):
-    ds = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})[0]
-    init_time = pd.Timestamp(ds["time"].values).to_pydatetime()
-    valid_time = pd.Timestamp(ds["valid_time"].values).to_pydatetime()
-    step = pd.Timedelta(ds["step"].values).to_pytimedelta()
-    bbox = file["subregion"]
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO gfs_file (run_id, fhour, filename, init_time, valid_time, step, subregion)
-                VALUES (%s, %s, %s, %s, %s, %s, ST_MakeEnvelope(%s, %s, %s, %s, 4326))
-                ON CONFLICT (run_id, fhour) DO NOTHING
-                RETURNING id
-            """, (
-                file["run_id"], file["fhour"], file["filename"],
-                init_time, valid_time, step,
-                bbox["west"], bbox["south"], bbox["east"], bbox["north"]
-            ))
-            row = cur.fetchone()
-            return row[0] if row else None
 
 # === utilities ===
 def format_run_date(run_date):
@@ -193,8 +148,18 @@ def download_file(url, path):
     return True
 
 
+# скачанный файл -> gfs_file + gfs_vars; point_ids кэшируется между файлами (сетка одна на прогон)
+def store_file(file, path, point_ids):
+    file_id = insert_to_gfs_file(file, path)
+    df = extract_file(path)
+    if not point_ids:
+        point_ids.update(upsert_grid_points(df[GRID].itertuples(index=False, name=None)))
+    insert_gfs_vars(file_id, df, point_ids)
+
+
 def download(files, dest, mode="default"):
     summary = {"downloaded": 0, "skipped": 0, "failed": 0}
+    point_ids = {}
     pbar = tqdm(total=len(files), unit="файл")
     
     for file in files:
@@ -207,7 +172,7 @@ def download(files, dest, mode="default"):
             summary["skipped"] += 1
         elif download_file(url, path):
             summary["downloaded"] += 1
-            insert_to_gfs_file(file, path)   # метаданные в БД только на реально скачанный файл
+            store_file(file, path, point_ids)   # метаданные + сырые переменные в БД
         else:
             summary["failed"] += 1
         
@@ -222,7 +187,7 @@ def main():
     PATH = "gfs_data"
 
     # === pre-downloading gfs variables ===
-    run_date = datetime.now(timezone.utc) # текущий день
+    run_date = datetime.now(timezone.utc) - timedelta(days=1) # текущий день
     run_ids = get_available_runs(run_date) # доступные прогоны + запись в forecast_run
     if not run_ids:                        # полных прогонов на день ещё нет
         return
