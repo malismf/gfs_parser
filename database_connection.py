@@ -1,6 +1,7 @@
 import psycopg
 from util_gfs import extract_file, GFS_VARS, GRID
 import pandas as pd
+import cfgrib
 
 # === database ===
 def get_connection():
@@ -29,10 +30,6 @@ def insert_to_forecast_run(product, run_date, cycle, collected_at):
 
 # метаданные файла в БД: init_time/valid_time/step из GRIB, run_id/filename/subregion из file. возвращает id
 def insert_to_gfs_file(file, path):
-    ds = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})[0]
-    init_time = pd.Timestamp(ds["time"].values).to_pydatetime()
-    valid_time = pd.Timestamp(ds["valid_time"].values).to_pydatetime()
-    step = pd.Timedelta(ds["step"].values).to_pytimedelta()
     bbox = file["subregion"]
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -43,24 +40,11 @@ def insert_to_gfs_file(file, path):
                 RETURNING id
             """, (
                 file["run_id"], file["fhour"], file["filename"],
-                init_time, valid_time, step,
+                file["init_time"], file["valid_time"], file["step"],
                 bbox["west"], bbox["south"], bbox["east"], bbox["north"]
             ))
             return cur.fetchone()[0]
 
-
-# upsert узлов сетки, возвращает {(lat, lon): point_id}
-def upsert_grid_points(points):
-    rows = [(float(lat), float(lon)) for lat, lon in points]
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.executemany("""
-                INSERT INTO grid_point (latitude, longitude, geom)
-                VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326))
-                ON CONFLICT (latitude, longitude) DO NOTHING
-            """, [(lat, lon, lon, lat) for lat, lon in rows])
-            cur.execute("SELECT latitude, longitude, id FROM grid_point")
-            return {(lat, lon): pid for lat, lon, pid in cur.fetchall()}
 
 
 # сырые переменные файла в gfs_vars по узлам сетки (SUNSD идёт в столбец sunsd по позиции)
@@ -80,3 +64,17 @@ def insert_gfs_vars(file_id, df, point_ids):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (file_id, point_id) DO NOTHING
             """, rows)
+
+
+# upsert узлов сетки, возвращает {(lat, lon): point_id}
+def upsert_grid_points(points):
+    rows = [(float(lat), float(lon)) for lat, lon in points]
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO grid_point (latitude, longitude, geom)
+                VALUES (%s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326))
+                ON CONFLICT (latitude, longitude) DO NOTHING
+            """, [(lat, lon, lon, lat) for lat, lon in rows])
+            cur.execute("SELECT latitude, longitude, id FROM grid_point")
+            return {(lat, lon): pid for lat, lon, pid in cur.fetchall()}

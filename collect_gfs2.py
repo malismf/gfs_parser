@@ -148,10 +148,25 @@ def download_file(url, path):
     return True
 
 
+def extract_file(path, file):
+    datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
+    ds1 = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})[0]
+    file["init_time"] = pd.Timestamp(ds1["time"].values).to_pydatetime()
+    file["valid_time"] = pd.Timestamp(ds1["valid_time"].values).to_pydatetime()
+    file["step"] = pd.Timedelta(ds1["step"].values).to_pytimedelta()
+    var_tables = []
+    for ds in datasets:
+        found_vars = [v for v in GFS_VARS if v in ds.data_vars]
+        if found_vars:
+            var_tables.append(ds[found_vars].to_dataframe().reset_index()[GRID + found_vars].set_index(GRID))
+    df = pd.concat(var_tables, axis=1)
+    df = df.loc[:, ~df.columns.duplicated()]   # tp двоится (накопление 0-N и 6-часовой бакет) — оставляем одно вхождение
+    return df.reset_index()
+
 # скачанный файл -> gfs_file + gfs_vars; point_ids кэшируется между файлами (сетка одна на прогон)
 def store_file(file, path, point_ids):
+    df = extract_file(path, file)
     file_id = insert_to_gfs_file(file, path)
-    df = extract_file(path)
     if not point_ids:
         point_ids.update(upsert_grid_points(df[GRID].itertuples(index=False, name=None)))
     insert_gfs_vars(file_id, df, point_ids)
