@@ -11,6 +11,10 @@ import cfgrib
 import pandas as pd
 from tqdm import tqdm
 import psycopg
+import warnings
+
+# Подавляем предупреждение от cfgrib о будущих изменениях xarray
+warnings.filterwarnings('ignore', category=FutureWarning, module='cfgrib')
 
 NOMADS_BASE = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod"
 PRODUCT = "pgrb2.0p25"
