@@ -95,40 +95,44 @@ def build_filter_url(run_date, cycle, fhour, bbox):
 
 
 # === pre-downloading ===
-# анализ доступных прогонов дня: цикл готов, если на сервере есть f384 — сразу пишем его в forecast_run
-def get_available_runs(run_date, timeout=10):
+# анализ доступных прогонов дня: цикл готов, если на сервере есть f384
+def get_available_cycles(run_date, timeout=10):
     product = f"gfs.{format_run_date(run_date)}"
     collected_at = datetime.now(timezone.utc)
-    run_ids = {}
+    available_cycles = []
     for cycle in (0, 6, 12, 18):
         url = build_gfs_url(run_date, cycle, fhour=384)
-        try:
-            req = urllib.request.Request(url, method="HEAD")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                if resp.status == 200:
-                    run_ids[cycle] = insert_to_forecast_run(product, format_run_date(run_date), cycle, collected_at)
-        except Exception:
-            pass
-    return run_ids
+        request = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status == 200:
+                available_cycles.append(cycle)
+    return available_cycles
+
+def insert_forecast_run(run_date, cycle):
+    product = f"gfs.{format_run_date(run_date)}"
+    collected_at = datetime.now(timezone.utc)
+    run_id = insert_to_forecast_run(product, format_run_date(run_date), cycle, collected_at)
+    return run_id
 
 
-def build_to_download_list(run_date, run_ids, forecast_cycle, bbox):
+
+def build_to_download_list(run_date, forecast_cycle, bbox):
     files = []
-    for cycle, run_id in run_ids.items():
-        hours = forecast_hours(MAX_FHOUR, HOURLY_UNTIL) if cycle == forecast_cycle else [0]
-        for fhour in hours:
-            url = build_gfs_url(run_date, cycle, fhour)
-            files.append({
-                "cycle": cycle,
-                "fhour": fhour,
-                "run_date": run_date,
-                "product": f"gfs.{format_run_date(run_date)}",
-                "url": url,
-                "download_url": build_filter_url(run_date, cycle, fhour, bbox),
-                "run_id": run_id,                # FK forecast_run
-                "filename": url.split("/")[-1],  # gfs.t00z.pgrb2.0p25.f096
-                "subregion": bbox,               # bbox области под gfs_file
-            })
+    hours = forecast_hours(MAX_FHOUR, HOURLY_UNTIL)
+    run_id = insert_forecast_run(run_date, forecast_cycle)
+    for fhour in hours:
+        url = build_gfs_url(run_date, forecast_cycle, fhour)
+        files.append({
+            "cycle": forecast_cycle,
+            "fhour": fhour,
+            "run_date": run_date,
+            "product": f"gfs.{format_run_date(run_date)}",
+            "url": url,
+            "download_url": build_filter_url(run_date, forecast_cycle, fhour, bbox),
+            "run_id": run_id,                # FK forecast_run
+            "filename": url.split("/")[-1],  # gfs.t00z.pgrb2.0p25.f096
+            "subregion": bbox,               # bbox области под gfs_file
+        })
     return files
 
 # === downloading ===
@@ -199,17 +203,19 @@ def download(files, dest, mode="default"):
 
 def main():
     PATH = "gfs_data"
-    run_date = datetime.now(timezone.utc) # текущий день
+    run_date = datetime.now(timezone.utc) - timedelta(days=1) # текущий день
 
     cleanup_old_runs(run_date) 
 
     # === pre-downloading gfs variables ===
-    run_ids = get_available_runs(run_date) # доступные прогоны + запись в forecast_run
-    if not run_ids:                        # полных прогонов на день ещё нет
+    available_cycles = get_available_cycles(run_date) # доступные циклы
+    print(available_cycles)
+    
+    if not available_cycles:                        # полных прогонов на день ещё нет
         return
-    forecast_cycle = min(run_ids) # цикл, для которого качаем полный прогноз
+    forecast_cycle = min(available_cycles) # цикл, для которого качаем полный прогноз
 
-    to_download_list = build_to_download_list(run_date, run_ids, forecast_cycle, BBOX)
+    to_download_list = build_to_download_list(run_date, forecast_cycle, BBOX)
     download(to_download_list, PATH, mode="grib")
 
 
