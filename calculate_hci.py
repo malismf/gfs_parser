@@ -52,7 +52,7 @@ def et_to_tc(et):
     if et <= 34:  return TC_TABLE[13]
     if et <= 36:  return TC_TABLE[14]
     if et <= 39:  return TC_TABLE[15]
-    if et >= 40: return TC_TABLE[16]
+    if et >= 40:  return TC_TABLE[16]
 
 
 def precip_to_r(precip_mm):
@@ -78,6 +78,21 @@ def wind_to_w(wind_kmh):
     if wind_kmh > 70:     return -10.0
 
 
+def cloud_to_a(cloud_pct):
+    # суточная облачность (%) - балл A
+    if cloud_pct == 0:    return 8.0
+    if cloud_pct <= 10:   return 9.0
+    if cloud_pct <= 20:   return 10.0
+    if cloud_pct <= 30:   return 9.0
+    if cloud_pct <= 40:   return 8.0
+    if cloud_pct <= 50:   return 7.0
+    if cloud_pct <= 60:   return 6.0
+    if cloud_pct <= 70:   return 5.0
+    if cloud_pct <= 80:   return 4.0
+    if cloud_pct <= 90:   return 3.0
+    if cloud_pct > 90:    return 2.0
+
+
 # === scoring ===
 
 def score_row(row):
@@ -85,9 +100,9 @@ def score_row(row):
     et  = calculate_ET(row["temp_max"], row["rel_hum_min"])
     tc  = et_to_tc(calculate_ET(row["temp_max"], row["rel_hum_min"]))
     r   = precip_to_r(row["precip_sum"])
-    w   = wind_to_w(row["wind_speed_mean"] * 3.6)  
-    # TODO: переменная облачности (A)
-    return pd.Series({"et": et, "tc": tc, "r_score": r, "w_score": w})
+    w   = wind_to_w(row["wind_speed_mean"] * 3.6)
+    a   = cloud_to_a(row["cloud_cover_mean"]) 
+    return pd.Series({"et": et, "tc": tc, "r_score": r, "w_score": w, "a_score": a})
 
 
 # === main ===
