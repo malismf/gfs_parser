@@ -1,4 +1,6 @@
 import numpy as np
+from database_connection import fetch_tmax_rhmin, fetch_forecast_run
+from datetime import date
 
 # балл термокомфорта HCI по эффективной температуре ET (°C)
 TC_TABLE = np.array([
@@ -21,4 +23,9 @@ TC_TABLE = np.array([
     0,   # ET ≥ 40
 ], dtype=float)
 
-ET = Tmax - 0.4 * (Tmax - 10) * (1 - RHmin / 100)  # эффективная температура (Миссенар), вход Tmax и RHmin
+# эффективная температура ET (°C) по формуле Миссенара
+def calculate_ET(tmax, rhmin):
+    return tmax - 0.4 * (tmax - 10) * (1 - rhmin / 100)
+
+
+
