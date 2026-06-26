@@ -60,8 +60,8 @@ def insert_gfs_vars(file_id, df, point_ids):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.executemany("""
-                INSERT INTO gfs_vars (file_id, point_id, u10, v10, t2m, r2, t, tp, sunsd, tmax, tmin)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO gfs_vars (file_id, point_id, u10, v10, t2m, r2, t, tp, tcdc, sunsd, tmax, tmin)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (file_id, point_id) DO NOTHING
             """, rows)
 
@@ -126,9 +126,8 @@ def fetch_daily_weather(run_id):
         FROM daily_weather
         WHERE run_id = %s
     """
-    params: list = [run_id]
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(q, params)
+            cur.execute(q, (run_id,))
             cols = [d.name for d in cur.description]
             return pd.DataFrame(cur.fetchall(), columns=cols)

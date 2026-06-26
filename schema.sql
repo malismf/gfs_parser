@@ -47,6 +47,7 @@ CREATE TABLE gfs_vars (
     r2    REAL,   -- отн. влажность 2 м, %
     t     REAL,   -- темп. поверхности, K
     tp    REAL,   -- накопл. осадки, kg/m²
+    tcdc  REAL,   -- облачность, % (GRIB: TCDC)
     sunsd REAL,   -- сол. сияние, с (GRIB: SUNSD)
     tmax  REAL,   -- макс. темп., K (fhour > 120)
     tmin  REAL,   -- мин. темп., K (fhour > 120)

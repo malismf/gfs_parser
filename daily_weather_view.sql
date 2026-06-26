@@ -11,6 +11,7 @@ SELECT
     min(rel_hum)                    AS rel_hum_min,
     avg(wind_speed)                 AS wind_speed_mean,
     sum(precip_step)                AS precip_sum,
+    avg(cloud_cover)               AS cloud_cover_mean,
     sum(sun_dur_step) / 3600.0      AS sun_hours
 
 FROM gfs_step

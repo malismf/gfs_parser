@@ -56,6 +56,8 @@ def tci_vars_levels(fhour):
     if fhour > 0:                      # на f000 накопительных полей нет
         variables += ["APCP", "SUNSD"]
         levels += ["surface"]
+        variables += ["TCDC"]
+        levels += ["entire_atmosphere"]
 
     if fhour > HOURLY_UNTIL:           # шаг стал 3-часовым — берём экстремумы за 3 часа
         variables += ["TMAX", "TMIN"]
@@ -217,6 +219,7 @@ def main():
 
     to_download_list = build_to_download_list(run_date, forecast_cycle, BBOX)
     download(to_download_list, PATH, mode="grib")
+
 
 
 if __name__ == "__main__":
