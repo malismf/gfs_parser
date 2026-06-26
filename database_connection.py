@@ -86,3 +86,49 @@ def cleanup_old_runs(cutoff_date):
             # Выполняем удаление. Каскадное удаление (ON DELETE CASCADE) сработает автоматически
             cur.execute("DELETE FROM forecast_run WHERE run_date < %s", (cutoff_date,))
             print(f"Очистка завершена. Удалено прогонов старше {cutoff_date}: {cur.rowcount}")
+
+# === fetching ===
+
+def fetch_forecast_run(run_date, cycle):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, product, run_date, cycle, collected_at
+                FROM forecast_run
+                WHERE run_date = %s AND cycle = %s
+            """, (run_date, cycle))
+            row = cur.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "product": row[1],
+                    "run_date": row[2],
+                    "cycle": row[3],
+                    "collected_at": row[4]
+                }
+            else:
+                return None
+
+def fetch_daily_weather(run_id):
+    # все агрегированные поля за сутки по run_id; point_ids — опциональный фильтр списком
+    q = """
+        SELECT
+            point_id,
+            date_local,
+            temp_max,
+            temp_mean,
+            temp_min,
+            rel_hum_min,
+            rel_hum_mean,
+            wind_speed_mean,
+            precip_sum,
+            sun_hours
+        FROM daily_weather
+        WHERE run_id = %s
+    """
+    params: list = [run_id]
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(q, params)
+            cols = [d.name for d in cur.description]
+            return pd.DataFrame(cur.fetchall(), columns=cols)
