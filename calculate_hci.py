@@ -101,14 +101,28 @@ def score_row(row):
     tc  = et_to_tc(calculate_ET(row["temp_max"], row["rel_hum_min"]))
     r   = precip_to_r(row["precip_sum"])
     w   = wind_to_w(row["wind_speed_mean"] * 3.6)
-    a   = cloud_to_a(row["cloud_cover_mean"]) 
-    return pd.Series({"et": et, "tc": tc, "r_score": r, "w_score": w, "a_score": a})
+    a   = cloud_to_a(row["cloud_cover_mean"])
+    hci = 4 * tc + a + 3 * r + 2 * w
+    return pd.Series({"et": et, "tc": tc, "r_score": r, "w_score": w, "a_score": a, "hci": hci})
 
 
 # === main ===
 
 def main():
-    return 0
+    run_date = date.fromisoformat("2026-06-25")  # пример даты прогноза
+    run = fetch_forecast_run(run_date, 0)
+    if run is None:
+        print(f"Прогон не найден: {run_date} цикл 0")
+        return
+
+    df = fetch_daily_weather(run["id"])
+
+    scores = df.apply(score_row, axis=1)
+    result = pd.concat([df[["point_id", "date_local"]], scores], axis=1)
+
+    out = f"hci_{run_date.strftime('%Y%m%d')}.csv"
+    result.to_csv(out, index=False, float_format="%.2f")
+    print(f"Сохранено: {out} ({len(result)} строк)")
 
 
 if __name__ == "__main__":
