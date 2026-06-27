@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from database_connection import fetch_forecast_run, fetch_daily_weather
 from datetime import date
+from database_connection import fetch_forecast_run, fetch_daily_weather, insert_tci_daily
+
 
 # === CI lookup table (Mieczkowski 1985) ===
 # строки: T °C (≥36 … ≤-5), столбцы: RH % (<20, 20-39, 40-59, 60-79, ≥80)
@@ -90,26 +92,22 @@ def score_row(row):
     s   = sun_to_s(row["sun_hours"])
     w   = wind_to_w(row["wind_speed_mean"] * 3.6)   # м/с → км/ч
     tci = 8*cid + 2*cia + 4*r + 4*s + 2*w           # Mieczkowski 1985; max = 100
-    return pd.Series({"cid": cid, "cia": cia, "r_score": r, "s_score": s, "w_score": w, "tci": tci})
+    return pd.Series({"cid": cid, "cia": cia, "r": r, "s": s, "w": w, "tci": tci})
 
 
 # === main ===
 
 def main():
-    run_date = date.fromisoformat("2026-06-25")
+    run_date = date.fromisoformat("2026-06-26")
     run = fetch_forecast_run(run_date, 0)
     if run is None:
         print(f"Прогон не найден: {run_date} цикл 0")
         return
 
     df = fetch_daily_weather(run["id"])
-
     scores = df.apply(score_row, axis=1)
     result = pd.concat([df[["point_id", "date_local"]], scores], axis=1)
-
-    out = f"tci_{run_date.strftime('%Y%m%d')}.csv"
-    result.to_csv(out, index=False, float_format="%.2f")
-    print(f"Сохранено: {out} ({len(result)} строк)")
+    insert_tci_daily(run["id"], run["run_date"], result)
 
 
 if __name__ == "__main__":

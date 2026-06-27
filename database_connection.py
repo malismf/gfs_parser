@@ -65,6 +65,50 @@ def insert_gfs_vars(file_id, df, point_ids):
             """, rows)
 
 
+def insert_hci_daily(run_id, run_date, df):
+    # df: point_id, date_local, et, tc, r, w, a, hci
+    rows = []
+    for _, row in df.iterrows():
+        fd = (row["date_local"] - run_date).days
+        rows.append((
+            run_id, int(row["point_id"]), row["date_local"], fd,
+            row["et"], row["tc"], row["a"], row["r"], row["w"], row["hci"]
+        ))
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO hci_daily (run_id, point_id, date_local, forecast_day, et, tc, a, r, w, hci)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, point_id, date_local) DO UPDATE SET
+                    forecast_day = EXCLUDED.forecast_day,
+                    et = EXCLUDED.et, tc = EXCLUDED.tc, a = EXCLUDED.a,
+                    r = EXCLUDED.r, w = EXCLUDED.w, hci = EXCLUDED.hci
+            """, rows)
+        print(f"hci_daily: upsert {len(rows)} строк, run_id={run_id}")
+
+
+def insert_tci_daily(run_id, run_date, df):
+    # df: point_id, date_local, cid, cia, r, s, w, tci
+    rows = []
+    for _, row in df.iterrows():
+        fd = (row["date_local"] - run_date).days
+        rows.append((
+            run_id, int(row["point_id"]), row["date_local"], fd,
+            row["cid"], row["cia"], row["r"], row["s"], row["w"], row["tci"]
+        ))
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO tci_daily (run_id, point_id, date_local, forecast_day, cid, cia, r, s, w, tci)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, point_id, date_local) DO UPDATE SET
+                    forecast_day = EXCLUDED.forecast_day,
+                    cid = EXCLUDED.cid, cia = EXCLUDED.cia, r = EXCLUDED.r,
+                    s = EXCLUDED.s, w = EXCLUDED.w, tci = EXCLUDED.tci
+            """, rows)
+        print(f"tci_daily: upsert {len(rows)} строк, run_id={run_id}")
+
+
 # upsert узлов сетки, возвращает {(lat, lon): point_id}
 def upsert_grid_points(points):
     rows = [(float(lat), float(lon)) for lat, lon in points]
