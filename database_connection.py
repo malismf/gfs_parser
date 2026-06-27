@@ -46,7 +46,6 @@ def insert_to_gfs_file(file, path):
             return cur.fetchone()[0]
 
 
-
 # сырые переменные файла в gfs_vars по узлам сетки (SUNSD идёт в столбец sunsd по позиции)
 def insert_gfs_vars(file_id, df, point_ids):
     values = df.set_index(GRID).reindex(columns=GFS_VARS)   # фиксируем набор и порядок столбцов, отсутствующие -> NaN
@@ -78,14 +77,14 @@ def upsert_grid_points(points):
             """, [(lat, lon, lon, lat) for lat, lon in rows])
             cur.execute("SELECT latitude, longitude, id FROM grid_point")
             return {(lat, lon): pid for lat, lon, pid in cur.fetchall()}
-        
+
 
 def cleanup_old_runs(cutoff_date):
     with get_connection() as conn:
         with conn.cursor() as cur:
-            # Выполняем удаление. Каскадное удаление (ON DELETE CASCADE) сработает автоматически
             cur.execute("DELETE FROM forecast_run WHERE run_date < %s", (cutoff_date,))
             print(f"Очистка завершена. Удалено прогонов старше {cutoff_date}: {cur.rowcount}")
+
 
 # === fetching ===
 
@@ -109,8 +108,9 @@ def fetch_forecast_run(run_date, cycle):
             else:
                 return None
 
+
 def fetch_daily_weather(run_id):
-    # все агрегированные поля за сутки по run_id; point_ids — опциональный фильтр списком
+    # все агрегированные поля за сутки по run_id
     q = """
         SELECT
             point_id,
@@ -122,7 +122,8 @@ def fetch_daily_weather(run_id):
             rel_hum_mean,
             wind_speed_mean,
             precip_sum,
-            sun_hours
+            sun_hours,
+            cloud_cover_mean
         FROM daily_weather
         WHERE run_id = %s
     """
