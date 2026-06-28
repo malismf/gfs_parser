@@ -1,6 +1,6 @@
 """
 compute_mo_grid_weight.py — предрасчёт весов пересечений ячеек узлов с полигонами МО.
-Запускать один раз после load_mo_boundary.py и после изменения сетки grid_point.
+Запускать один раз после load_mo_boundary.py и после добавления сетки grid_point.
 """
 
 from database_connection import get_connection
