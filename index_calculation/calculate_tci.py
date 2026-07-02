@@ -3,7 +3,7 @@ import pandas as pd
 from database_connection import fetch_forecast_run, fetch_daily_weather
 from datetime import date
 from database_connection import fetch_forecast_run, fetch_daily_weather, insert_tci_daily
-
+from date_config import RUN_DATE
 
 # === CI lookup table (Mieczkowski 1985) ===
 # строки: T °C (≥36 … ≤-5), столбцы: RH % (<20, 20-39, 40-59, 60-79, ≥80)
@@ -98,7 +98,7 @@ def score_row(row):
 # === main ===
 
 def main():
-    run_date = date.fromisoformat("2026-06-26")
+    run_date = date.fromisoformat(RUN_DATE)
     run = fetch_forecast_run(run_date, 0)
     if run is None:
         print(f"Прогон не найден: {run_date} цикл 0")

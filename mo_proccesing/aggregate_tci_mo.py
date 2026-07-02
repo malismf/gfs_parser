@@ -5,6 +5,7 @@ aggregate_tci_mo.py — агрегация TCI по МО через взвеше
 import pandas as pd
 from database_connection import get_connection, fetch_forecast_run
 from datetime import date
+from date_config import RUN_DATE
 
 
 def aggregate_tci_mo(run_id):
@@ -30,7 +31,7 @@ def aggregate_tci_mo(run_id):
 
 
 def main():
-    run_date = date.fromisoformat("2026-06-26")
+    run_date = date.fromisoformat(RUN_DATE)
     run = fetch_forecast_run(run_date, 0)
     if run is None:
         print(f"Прогон не найден: {run_date}")

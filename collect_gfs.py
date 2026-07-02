@@ -13,6 +13,7 @@ from tqdm import tqdm
 from util_gfs import extract_file, GFS_VARS, GRID
 import warnings
 from database_connection import insert_to_forecast_run, insert_to_gfs_file, upsert_grid_points, insert_gfs_vars, cleanup_old_runs
+from date_config import RUN_DATE
 
 # Подавляем предупреждение от cfgrib о будущих изменениях xarray
 warnings.filterwarnings('ignore', category=FutureWarning, module='cfgrib')
@@ -105,9 +106,12 @@ def get_available_cycles(run_date, timeout=10):
     for cycle in (0, 6, 12, 18):
         url = build_gfs_url(run_date, cycle, fhour=384)
         request = urllib.request.Request(url, method="HEAD")
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            if response.status == 200:
-                available_cycles.append(cycle)
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if response.status == 200:
+                    available_cycles.append(cycle)
+        except:
+            return available_cycles
     return available_cycles
 
 def insert_forecast_run(run_date, cycle):
@@ -205,7 +209,7 @@ def download(files, dest, mode="default"):
 
 def main():
     PATH = "gfs_data"
-    run_date = datetime.now(timezone.utc) - timedelta(days=1) # текущий день
+    run_date = date.fromisoformat(RUN_DATE)
 
     cleanup_old_runs(run_date) 
 
