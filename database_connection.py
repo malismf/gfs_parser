@@ -59,8 +59,8 @@ def insert_gfs_vars(file_id, df, point_ids):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.executemany("""
-                INSERT INTO gfs_vars (file_id, point_id, u10, v10, t2m, r2, t, tp, tcdc, sunsd, tmax, tmin)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO gfs_vars (file_id, point_id, u10, v10, t2m, r2, t, tp, tcdc, sunsd, tmax, tmin, sdswrf, suswrf, sdlwrf, sulwrf)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (file_id, point_id) DO NOTHING
             """, rows)
 
@@ -107,6 +107,31 @@ def insert_tci_daily(run_id, run_date, df):
                     s = EXCLUDED.s, w = EXCLUDED.w, tci = EXCLUDED.tci
             """, rows)
         print(f"tci_daily: upsert {len(rows)} строк, run_id={run_id}")
+
+
+ 
+def insert_utci_daily(run_id, run_date, df):
+    # df: point_id, date_local, tdb_max, tr_max, rh_max, v_max, utci_max
+    rows = []
+    for _, row in df.iterrows():
+        fd = (row["date_local"] - run_date).days
+        rows.append((
+            run_id, int(row["point_id"]), row["date_local"], fd,
+            row["tdb_max"], row["tr_max"], row["rh_max"], row["v_max"], row["utci_max"],
+        ))
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO utci_daily
+                    (run_id, point_id, date_local, forecast_day, tdb_max, tr_max, rh_max, v_max, utci_max)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_id, point_id, date_local) DO UPDATE SET
+                    forecast_day = EXCLUDED.forecast_day,
+                    tdb_max = EXCLUDED.tdb_max, tr_max = EXCLUDED.tr_max,
+                    rh_max = EXCLUDED.rh_max, v_max = EXCLUDED.v_max,
+                    utci_max = EXCLUDED.utci_max
+            """, rows)
+        print(f"utci_daily: upsert {len(rows)} строк, run_id={run_id}")
 
 
 # upsert узлов сетки, возвращает {(lat, lon): point_id}
@@ -169,6 +194,19 @@ def fetch_daily_weather(run_id):
             sun_hours,
             cloud_cover_mean
         FROM daily_weather
+        WHERE run_id = %s
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(q, (run_id,))
+            cols = [d.name for d in cur.description]
+            return pd.DataFrame(cur.fetchall(), columns=cols)
+
+
+def fetch_utci_input(run_id):
+    q = """
+        SELECT point_id, local_time, temp, rel_hum, wind_speed, mrt
+        FROM utci_input
         WHERE run_id = %s
     """
     with get_connection() as conn:

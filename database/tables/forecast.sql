@@ -51,6 +51,10 @@ CREATE TABLE gfs_vars (
     sunsd REAL,   -- сол. сияние, с (GRIB: SUNSD)
     tmax  REAL,   -- макс. темп., K (fhour > 120)
     tmin  REAL,   -- мин. темп., K (fhour > 120)
+    sdswrf REAL,   -- downward shortwave radiation flux, W/m²
+    suswrf REAL,   -- upward shortwave radiation flux, W/m²
+    sdlwrf REAL,   -- downward longwave radiation flux, W/m²
+    sulwrf REAL,   -- upward longwave radiation flux, W/m²
     CONSTRAINT uq_gfs_vars UNIQUE (file_id, point_id)
 );
 CREATE INDEX idx_gfs_vars_file  ON gfs_vars(file_id);

@@ -55,7 +55,7 @@ def tci_vars_levels(fhour):
     levels = ["2_m_above_ground", "10_m_above_ground"]
 
     if fhour > 0:                      # на f000 накопительных полей нет
-        variables += ["APCP", "SUNSD"]
+        variables += ["APCP", "SUNSD", "DSWRF", "USWRF", "DLWRF", "ULWRF"]
         levels += ["surface"]
         variables += ["TCDC"]
         levels += ["entire_atmosphere"]
