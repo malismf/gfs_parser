@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 import urllib.request
 from urllib.parse import urlencode
 import os
+import tempfile
 import requests
 import cfgrib
 import pandas as pd
@@ -142,20 +143,28 @@ def build_to_download_list(run_date, forecast_cycle, bbox):
     return files
 
 # === downloading ===
-def download_file(url, path):
+def download_file(url, path=None):
     try:
         response = requests.get(url, stream=True, timeout=30)
         response.raise_for_status()
     except requests.RequestException:
-        return False
+        return None
+
+    if path is None:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".grib2") as tmp:
+            temp_path = tmp.name
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    tmp.write(chunk)
+        return temp_path
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
 
     with open(path, "wb") as f:
-        for chunk in response.iter_content():
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
             if chunk:
                 f.write(chunk)
-    return True
+    return path
 
 def extract_file(path, file):
     datasets = cfgrib.open_datasets(path, backend_kwargs={"indexpath": ""})
@@ -181,34 +190,42 @@ def store_file(file, path, point_ids):
     insert_gfs_vars(file_id, df, point_ids)
 
 
-def download(files, dest, mode="default"):
+def download(files, dest=None, mode="default"):
     summary = {"downloaded": 0, "skipped": 0, "failed": 0}
     point_ids = {}
     pbar = tqdm(total=len(files), unit="файл")
-    
+
     for file in files:
         if mode == "grib":
             url = file["download_url"]   # серверная подвыборка по квадрату (фильтр)
-        if mode == "default":
+        elif mode == "default":
             url = file["url"]            # обычное скачивание — файл целиком
-        path = local_path(file, dest)
-        if os.path.exists(path):
-            summary["skipped"] += 1
-        elif download_file(url, path):
-            summary["downloaded"] += 1
-            store_file(file, path, point_ids)   # метаданные + сырые переменные в БД
         else:
-            summary["failed"] += 1
-        
+            url = file["url"]
+
+        path = local_path(file, dest) if dest else None
+        if dest and path and os.path.exists(path):
+            summary["skipped"] += 1
+        else:
+            temp_path = download_file(url, path)
+            if temp_path:
+                summary["downloaded"] += 1
+                try:
+                    store_file(file, temp_path, point_ids)   # метаданные + сырые переменные в БД
+                finally:
+                    if not dest and temp_path and os.path.exists(temp_path):
+                        os.remove(temp_path)
+            else:
+                summary["failed"] += 1
+
         pbar.update(1)
         pbar.set_description(f"Загружено: {summary['downloaded']}, Пропущено: {summary['skipped']}, Ошибки: {summary['failed']}")
-    
+
     pbar.close()
     return summary
 
 
 def main():
-    PATH = "gfs_data"
     run_date = date.fromisoformat(RUN_DATE)
 
     cleanup_old_runs(run_date) 
@@ -222,7 +239,7 @@ def main():
     forecast_cycle = min(available_cycles) # цикл, для которого качаем полный прогноз
 
     to_download_list = build_to_download_list(run_date, forecast_cycle, BBOX)
-    download(to_download_list, PATH, mode="grib")
+    download(to_download_list, dest=None, mode="grib")
 
 
 
