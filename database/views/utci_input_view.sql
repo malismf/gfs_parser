@@ -16,4 +16,3 @@ SELECT
         0.25
     ) - 273.15 AS mrt
 FROM gfs_step;
- 
