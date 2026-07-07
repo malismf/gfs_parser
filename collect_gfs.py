@@ -226,6 +226,9 @@ def download(files, dest=None, mode="default"):
 
 
 def main():
+    # Подавляем предупреждение от cfgrib о будущих изменениях xarray
+    warnings.filterwarnings('ignore', category=FutureWarning, module='cfgrib')
+    
     run_date = date.fromisoformat(RUN_DATE)
 
     cleanup_old_runs(run_date) 
