@@ -35,7 +35,7 @@ pip install -r requirements.txt
 RUN_DATE = "2026-11-25"
 ```
 
-**Создайте таблицы в БД** — в `create_database.py`. Данные сервера берутся из `database_connection.py`.
+**Создайте таблицы в БД** — запустите скрипт `create_database.py`, чтобы создать БД с  tables и views для хранения данных. Данные сервера для подключения берутся из `database_connection.py`.
 
 **Подключение к БД** — в `database_connection.py` (`host`, `port`, `dbname`, `user`, `password`). По умолчанию база `tourist-climate-assessment` на `localhost:5432`.
 
