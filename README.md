@@ -35,6 +35,8 @@ pip install -r requirements.txt
 RUN_DATE = "2026-11-25"
 ```
 
+**Создайте таблицы в БД** — в `create_database.py`. Данные сервера берутся из `database_connection.py`.
+
 **Подключение к БД** — в `database_connection.py` (`host`, `port`, `dbname`, `user`, `password`). По умолчанию база `tourist-climate-assessment` на `localhost:5432`.
 
 **Схема БД** (порядок важен: сначала таблицы, потом представления):
@@ -99,6 +101,7 @@ run.py                      — точка входа пайплайна
 collect_gfs.py              — загрузка GFS и запись в БД
 util_gfs.py                 — разбор GRIB2
 database_connection.py      — PostgreSQL
+create_database.py          — создать базу данных на сервере
 date_config.py              — дата прогона
 index_calculation/          — TCI, HCI, UTCI
 mo_proccesing/              — границы МО и агрегация

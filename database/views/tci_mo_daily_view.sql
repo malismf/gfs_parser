@@ -1,3 +1,4 @@
+CREATE OR REPLACE VIEW tci_mo_daily AS
  SELECT g.mo_id,
     t.run_id,
     t.date_local,

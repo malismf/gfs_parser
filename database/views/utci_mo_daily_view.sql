@@ -1,4 +1,4 @@
-CREATE VIEW utci_mo_daily AS
+CREATE OR REPLACE VIEW utci_mo_daily AS
 SELECT
     u.run_id,
     u.date_local,

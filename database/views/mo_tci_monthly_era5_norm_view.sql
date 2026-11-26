@@ -1,3 +1,4 @@
+CREATE OR REPLACE VIEW mo_tci_monthly_era5_norm AS
  SELECT b.id AS mo_id,
     b.name,
     EXTRACT(month FROM e.month)::integer AS mnum,

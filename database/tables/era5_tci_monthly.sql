@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS era5_tci_monthly 
+CREATE TABLE IF NOT EXISTS era5_tci_monthly (
         point_id  INTEGER NOT NULL
                     REFERENCES grid_point(id) ON DELETE CASCADE,
         month     DATE    NOT NULL,   -- первое число месяца
@@ -17,3 +17,4 @@ CREATE TABLE IF NOT EXISTS era5_tci_monthly
         sun_hours REAL,               -- ср. суточное солнечное сияние (ч)
         utci      REAL,               -- UTCI
         PRIMARY KEY (point_id, month)
+);

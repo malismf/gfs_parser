@@ -3,15 +3,17 @@ from util_gfs import extract_file, GFS_VARS, GRID
 import pandas as pd
 import cfgrib
 
-# === database ===
+DB_CONFIG = {
+    "host": "127.0.0.1",
+    "port": 5433,
+    "dbname": "tourist-climate-assessment",
+    "user": "postgres",
+    "password": "123123",
+}
+
+
 def get_connection():
-    return psycopg.connect(
-        host="localhost",
-        port=5432,
-        dbname="tourist-climate-assessment",
-        user="postgres",
-        password="123123"
-    )
+    return psycopg.connect(**DB_CONFIG)
 
 
 def insert_to_forecast_run(product, run_date, cycle, collected_at):
